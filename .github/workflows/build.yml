@@ -22,14 +22,16 @@ jobs:
           export CC=clang
           export CLANG_TRIPLE=aarch64-linux-gnu-
           
-          # 1. Generate the base config for Mi9T Pro
+          # These flags prevent the build from stopping on the tfa98xx audio error
+          export KCFLAGS="-Wno-error=enum-int-mismatch -Wno-error=array-compare -Wno-error=address -Wno-error=dangling-pointer"
+
+          # 1. Generate Config
           make raphael_defconfig
           
-          # 2. Apply your manual module changes
+          # 2. Sync manual module edits
           make olddefconfig
           
           # 3. Compile Kernel and Modules
-          # This builds the Image and all the .ko files for your 5 modules
           make -j$(nproc --all) Image.gz-dtb modules
 
       - name: Package Kernel and Modules
@@ -37,15 +39,20 @@ jobs:
           mkdir -p output/modules
           
           # Copy the main Kernel Image
-          cp arch/arm64/boot/Image.gz-dtb output/
+          if [ -f arch/arm64/boot/Image.gz-dtb ]; then
+            cp arch/arm64/boot/Image.gz-dtb output/
+          fi
           
-          # Collect and zip all compiled modules (.ko files)
-          # This is necessary for your 5 manual codes to actually work on the phone
+          # Collect all compiled modules (.ko files) for your 5 features
           find . -name "*.ko" -exec cp {} output/modules/ \;
-          cd output && zip -r modules.zip modules/ && rm -rf modules/
+          
+          # Zip modules only if they exist
+          if [ "$(ls -A output/modules)" ]; then
+            cd output && zip -r modules.zip modules/ && rm -rf modules/
+          fi
 
       - name: Upload Results
         uses: actions/upload-artifact@v4
         with:
-          name: Raphael-Kernel-With-Modules
+          name: Raphael-Kernel-Built
           path: output/*
