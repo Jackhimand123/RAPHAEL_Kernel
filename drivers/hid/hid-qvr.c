@@ -320,8 +320,8 @@ static int qvr_send_package_wrap(u8 *message, int msize, struct hid_device *hid)
 	data->mNumerator = imuData.mNumerator;
 	data->mDenominator = imuData.mDenominator;
 
-	trace_qvr_recv_sensor("gyro", data->gts, data->gx, data->gy, data->gz);
-	trace_qvr_recv_sensor("accel", data->ats, data->ax, data->ay, data->az);
+	//trace_qvr_recv_sensor("gyro", data->gts, data->gx, data->gy, data->gz);
+	//trace_qvr_recv_sensor("accel", data->ats, data->ax, data->ay, data->az);
 
 	index_buf->most_recent_index = buf_index;
 	buf_index = (buf_index == (8 - 1)) ? 0 : buf_index + 1;
