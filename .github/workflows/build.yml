@@ -12,51 +12,47 @@ jobs:
       - name: Setup Build Environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc build-essential bison flex libssl-dev libelf-dev clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi zip
+          # Fixed: Install python2-minimal for the dtbo.img tool
+          sudo apt-get install -y bc build-essential bison flex libssl-dev libelf-dev clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi zip python2-minimal
+          # Fixed: Force link python3 to python2 just in case
+          sudo ln -sf /usr/bin/python3 /usr/bin/python2
 
       - name: Configure and Compile
         run: |
-          # Define Architecture and Compilers
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
           export CC=clang
           export CLANG_TRIPLE=aarch64-linux-gnu-
           
-          # Relax compiler strictness to bypass known Raphael source bugs
-          export KCFLAGS="-Wno-error=enum-int-mismatch -Wno-error=array-compare -Wno-error=address -Wno-error=dangling-pointer -Wno-error=maybe-uninitialized"
+          # Fixed: Bypass the 'Wstringop-overread' and Audio driver warnings
+          export KCFLAGS="-Wno-error=enum-int-mismatch -Wno-error=array-compare -Wno-error=address -Wno-error=dangling-pointer -Wno-error=stringop-overread -Wno-error=maybe-uninitialized"
 
-          # 1. Initialize the Raphael configuration
+          # Load your specific device config
           make raphael_defconfig
           
-          # 2. FIX Error 1: Disable the broken HID_TRACE driver
+          # Ensure HID_TRACE is off in the config since we deleted the files
           scripts/config --disable CONFIG_HID_TRACE
           
-          # 3. Apply changes and your manual module edits
           make olddefconfig
           
-          # 4. Compile the Kernel (Image.gz-dtb) and Modules (.ko)
-          make -j$(nproc --all) Image.gz-dtb modules
+          # Fixed: Build Kernel, DTBO, and Modules
+          make -j$(nproc --all) Image.gz-dtb dtbo modules
 
-      - name: Package Results
+      - name: Package Modules
         run: |
           mkdir -p output/modules
-          
-          # Copy the Kernel Image if successful
-          if [ -f arch/arm64/boot/Image.gz-dtb ]; then
-            cp arch/arm64/boot/Image.gz-dtb output/
-          fi
-          
-          # Collect all compiled module files (.ko)
+          # Find all compiled modules and zip them
           find . -name "*.ko" -exec cp {} output/modules/ \;
-          
-          # Only create the zip if modules were actually built
           if [ "$(ls -A output/modules)" ]; then
             cd output && zip -r modules.zip modules/ && rm -rf modules/
           fi
 
-      - name: Upload Artifacts
+      - name: Upload Final Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Raphael-Final-Kernel
-          path: output/*
+          name: Raphael-Kernel-Release
+          path: |
+            arch/arm64/boot/Image.gz-dtb
+            arch/arm64/boot/dtbo.img
+            output/modules.zip
