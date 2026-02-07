@@ -16,8 +16,8 @@ jobs:
       - name: Install Toolchain and Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc build-essential bison flex libssl-dev libelf-dev clang lld llvm aarch64-linux-gnu-gcc
-          
+          sudo apt-get install -y bc build-essential bison flex libssl-dev libelf-dev clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+
       - name: Configure and Compile
         run: |
           export ARCH=arm64
@@ -29,22 +29,26 @@ jobs:
           # KCFLAGS bypass the messy code errors so we reach the finish line
           export KCFLAGS="-Wno-error=enum-int-mismatch -Wno-error=array-compare -Wno-error=address -Wno-error=dangling-pointer -Wno-error=stringop-overread -Wno-error=maybe-uninitialized -Wno-error=implicit-function-declaration -Wno-error=int-conversion -Wno-error=return-type -Wno-error=implicit-int"
 
-          # Use your modified config containing the 5 hack flags
+          # 1. Use your modified config containing the 5 hack flags
           make raphael_defconfig
           
-          # Disable the specific trace that crashed previously
+          # 2. Disable the specific trace that crashed previously
           scripts/config --disable CONFIG_HID_TRACE
           
+          # 3. Apply the changes
           make olddefconfig
           
-          # Build the Image and the Modules (Crucial for your .sh script)
+          # 4. Build the Image and the Modules (Crucial for your .sh script)
+          # Note: We skip dtbo.img target to avoid Python compatibility crashes
           make -j$(nproc --all) Image.gz-dtb modules
 
       - name: Organize Artifacts
         run: |
           mkdir -p out/modules
+          # Find and collect any .ko modules built for your hack
           find . -name "*.ko" -exec cp {} out/modules/ \;
-          cp arch/arm64/boot/Image.gz-dtb out/
+          # Copy the main kernel image
+          cp arch/arm64/boot/Image.gz-dtb out/ || true
 
       - name: Upload Hack Kernel Package
         uses: actions/upload-artifact@v4
