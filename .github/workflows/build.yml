@@ -16,43 +16,47 @@ jobs:
 
       - name: Configure and Compile
         run: |
+          # Define Architecture and Compilers
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
           export CC=clang
           export CLANG_TRIPLE=aarch64-linux-gnu-
           
-          # These flags prevent the build from stopping on the tfa98xx audio error
-          export KCFLAGS="-Wno-error=enum-int-mismatch -Wno-error=array-compare -Wno-error=address -Wno-error=dangling-pointer"
+          # Relax compiler strictness to bypass known Raphael source bugs
+          export KCFLAGS="-Wno-error=enum-int-mismatch -Wno-error=array-compare -Wno-error=address -Wno-error=dangling-pointer -Wno-error=maybe-uninitialized"
 
-          # 1. Generate Config
+          # 1. Initialize the Raphael configuration
           make raphael_defconfig
           
-          # 2. Sync manual module edits
+          # 2. FIX Error 1: Disable the broken HID_TRACE driver
+          scripts/config --disable CONFIG_HID_TRACE
+          
+          # 3. Apply changes and your manual module edits
           make olddefconfig
           
-          # 3. Compile Kernel and Modules
+          # 4. Compile the Kernel (Image.gz-dtb) and Modules (.ko)
           make -j$(nproc --all) Image.gz-dtb modules
 
-      - name: Package Kernel and Modules
+      - name: Package Results
         run: |
           mkdir -p output/modules
           
-          # Copy the main Kernel Image
+          # Copy the Kernel Image if successful
           if [ -f arch/arm64/boot/Image.gz-dtb ]; then
             cp arch/arm64/boot/Image.gz-dtb output/
           fi
           
-          # Collect all compiled modules (.ko files) for your 5 features
+          # Collect all compiled module files (.ko)
           find . -name "*.ko" -exec cp {} output/modules/ \;
           
-          # Zip modules only if they exist
+          # Only create the zip if modules were actually built
           if [ "$(ls -A output/modules)" ]; then
             cd output && zip -r modules.zip modules/ && rm -rf modules/
           fi
 
-      - name: Upload Results
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Raphael-Kernel-Built
+          name: Raphael-Final-Kernel
           path: output/*
