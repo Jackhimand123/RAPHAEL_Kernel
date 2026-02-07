@@ -43,7 +43,7 @@
 #include <linux/uaccess.h>
 #include "hid-ids.h"
 #include "hid-qvr.h"
-#include "hid-trace.h"
+//#include "hid-trace.h"
 
 #define TIME_OUT_START_STOP_MS 500
 #define TIME_OUT_READ_WRITE_MS 20
