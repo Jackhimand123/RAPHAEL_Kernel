@@ -12,10 +12,10 @@ jobs:
       - name: Setup Build Environment
         run: |
           sudo apt-get update
-          # Install necessary tools for 2026 Ubuntu environment
+          # Installing 2026-standard build tools
           sudo apt-get install -y bc build-essential bison flex libssl-dev libelf-dev clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi zip python3 python-is-python3
           
-          # Create the python2 alias needed by older kernel scripts
+          # Creating the python2 alias for legacy kernel scripts
           sudo ln -sf /usr/bin/python3 /usr/bin/python2
 
       - name: Configure and Compile
@@ -26,25 +26,26 @@ jobs:
           export CC=clang
           export CLANG_TRIPLE=aarch64-linux-gnu-
           
-          # Flags to bypass warnings that older kernels treat as errors with newer compilers
+          # These flags bypass the warnings you saw in net/wireguard and net/ethernet
           export KCFLAGS="-Wno-error=enum-int-mismatch -Wno-error=array-compare -Wno-error=address -Wno-error=dangling-pointer -Wno-error=stringop-overread -Wno-error=maybe-uninitialized"
 
-          # Load the device configuration
+          # 1. Load the default config
           make raphael_defconfig
           
-          # Ensure the broken trace driver is disabled (even though we deleted the files)
+          # 2. Disable the broken trace config (we manually fixed the files, but this keeps it clean)
           scripts/config --disable CONFIG_HID_TRACE
           
+          # 3. Finalize configuration
           make olddefconfig
           
-          # Build the kernel with integrated device tree and modules
-          # (Note: 'dtbo' was removed from here because it caused the 'No rule to make target' error)
+          # 4. The main build command
+          # Note: We build Image.gz-dtb because it includes the device tree for your Mi 9T Pro
           make -j$(nproc --all) Image.gz-dtb modules
 
       - name: Package Modules
         run: |
           mkdir -p output/modules
-          # Find all kernel modules (.ko files) and move them to a zip folder
+          # Collect all compiled kernel modules (.ko)
           find . -name "*.ko" -exec cp {} output/modules/ \;
           if [ "$(ls -A output/modules)" ]; then
             cd output && zip -r modules.zip modules/ && rm -rf modules/
