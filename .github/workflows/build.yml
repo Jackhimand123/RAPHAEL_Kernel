@@ -12,9 +12,10 @@ jobs:
       - name: Setup Build Environment
         run: |
           sudo apt-get update
-          # Fixed: Install python2-minimal for the dtbo.img tool
-          sudo apt-get install -y bc build-essential bison flex libssl-dev libelf-dev clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi zip python2-minimal
-          # Fixed: Force link python3 to python2 just in case
+          # We use python3 and python-is-python3 because python2-minimal is no longer in Ubuntu 24.04
+          sudo apt-get install -y bc build-essential bison flex libssl-dev libelf-dev clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi zip python3 python-is-python3
+          
+          # This creates the 'python2' command alias so the dtbo tool doesn't crash
           sudo ln -sf /usr/bin/python3 /usr/bin/python2
 
       - name: Configure and Compile
@@ -25,24 +26,26 @@ jobs:
           export CC=clang
           export CLANG_TRIPLE=aarch64-linux-gnu-
           
-          # Fixed: Bypass the 'Wstringop-overread' and Audio driver warnings
+          # Added -Wno-error=stringop-overread to fix the Wireguard/Net warnings you saw
           export KCFLAGS="-Wno-error=enum-int-mismatch -Wno-error=array-compare -Wno-error=address -Wno-error=dangling-pointer -Wno-error=stringop-overread -Wno-error=maybe-uninitialized"
 
-          # Load your specific device config
+          # 1. Load the Raphael config
           make raphael_defconfig
           
-          # Ensure HID_TRACE is off in the config since we deleted the files
+          # 2. Disable HID_TRACE in config since we deleted the source files
           scripts/config --disable CONFIG_HID_TRACE
           
+          # 3. Apply config changes
           make olddefconfig
           
-          # Fixed: Build Kernel, DTBO, and Modules
+          # 4. Build Kernel, DTBO, and Modules
+          # -j$(nproc --all) uses all available CPU cores for speed
           make -j$(nproc --all) Image.gz-dtb dtbo modules
 
       - name: Package Modules
         run: |
           mkdir -p output/modules
-          # Find all compiled modules and zip them
+          # Find all kernel modules (.ko files) and move them to a zip folder
           find . -name "*.ko" -exec cp {} output/modules/ \;
           if [ "$(ls -A output/modules)" ]; then
             cd output && zip -r modules.zip modules/ && rm -rf modules/
