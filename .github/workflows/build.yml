@@ -12,10 +12,10 @@ jobs:
       - name: Setup Build Environment
         run: |
           sudo apt-get update
-          # We use python3 and python-is-python3 because python2-minimal is no longer in Ubuntu 24.04
+          # Install necessary tools for 2026 Ubuntu environment
           sudo apt-get install -y bc build-essential bison flex libssl-dev libelf-dev clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi zip python3 python-is-python3
           
-          # This creates the 'python2' command alias so the dtbo tool doesn't crash
+          # Create the python2 alias needed by older kernel scripts
           sudo ln -sf /usr/bin/python3 /usr/bin/python2
 
       - name: Configure and Compile
@@ -26,21 +26,20 @@ jobs:
           export CC=clang
           export CLANG_TRIPLE=aarch64-linux-gnu-
           
-          # Added -Wno-error=stringop-overread to fix the Wireguard/Net warnings you saw
+          # Flags to bypass warnings that older kernels treat as errors with newer compilers
           export KCFLAGS="-Wno-error=enum-int-mismatch -Wno-error=array-compare -Wno-error=address -Wno-error=dangling-pointer -Wno-error=stringop-overread -Wno-error=maybe-uninitialized"
 
-          # 1. Load the Raphael config
+          # Load the device configuration
           make raphael_defconfig
           
-          # 2. Disable HID_TRACE in config since we deleted the source files
+          # Ensure the broken trace driver is disabled (even though we deleted the files)
           scripts/config --disable CONFIG_HID_TRACE
           
-          # 3. Apply config changes
           make olddefconfig
           
-          # 4. Build Kernel, DTBO, and Modules
-          # -j$(nproc --all) uses all available CPU cores for speed
-          make -j$(nproc --all) Image.gz-dtb dtbo modules
+          # Build the kernel with integrated device tree and modules
+          # (Note: 'dtbo' was removed from here because it caused the 'No rule to make target' error)
+          make -j$(nproc --all) Image.gz-dtb modules
 
       - name: Package Modules
         run: |
@@ -57,5 +56,4 @@ jobs:
           name: Raphael-Kernel-Release
           path: |
             arch/arm64/boot/Image.gz-dtb
-            arch/arm64/boot/dtbo.img
             output/modules.zip
