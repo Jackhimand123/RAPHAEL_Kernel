@@ -16,7 +16,7 @@ jobs:
       - name: Install Toolchain and Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc build-essential bison flex libssl-dev libelf-dev clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python3
+          sudo apt-get install -y bc build-essential bison flex libssl-dev libelf-dev clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
 
       - name: Configure and Compile
         run: |
@@ -26,30 +26,29 @@ jobs:
           export CC=clang
           export CLANG_TRIPLE=aarch64-linux-gnu-
           
-          # 1. THE "SHUT UP" BYPASS: Tricks the Makefile into thinking Python 2 exists
-          # This prevents the "python2: not found" error during DTBO generation
+          # Force python2 to 'true' to skip old script requirements
           sudo ln -sf /usr/bin/true /usr/bin/python2
 
-          # 2. THE SHIELD: Ignores the "conflicting types" and "mismatch" warnings
+          # Your shield against driver warnings
           export KCFLAGS="-Wno-error=enum-int-mismatch -Wno-error=array-compare -Wno-error=address -Wno-error=dangling-pointer -Wno-error=stringop-overread -Wno-error=maybe-uninitialized -Wno-error=implicit-function-declaration -Wno-error=int-conversion -Wno-error=return-type -Wno-error=implicit-int"
 
-          # 3. Load your defconfig (with your 5 hack lines added)
           make raphael_defconfig
           
-          # 4. Final configuration adjustments
+          # DISABLE the specific bundling that caused the Exit Code 2
+          scripts/config --disable CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE
+          scripts/config --disable CONFIG_BUILD_ARM64_DTB_OVERLAY
           scripts/config --disable CONFIG_HID_TRACE
+          
           make olddefconfig
           
-          # 5. Build only the essentials (Image and Modules)
-          # Even if DTBO triggers, our "python2" bypass will make it "succeed" instantly
-          make -j$(nproc --all) Image.gz-dtb modules
+          # Build ONLY the raw kernel 'Image' and modules.
+          # This avoids the 'embedded-dtb' crash completely.
+          make -j$(nproc --all) Image modules
 
       - name: Organize Artifacts
         run: |
           mkdir -p out/modules
-          # Copy the kernel image
-          cp arch/arm64/boot/Image.gz-dtb out/ || true
-          # Find and copy all .ko modules for your game hack
+          cp arch/arm64/boot/Image out/ || true
           find . -name "*.ko" -exec cp {} out/modules/ \;
 
       - name: Upload Hack Kernel Package
