@@ -26,13 +26,18 @@ jobs:
           export CC=clang
           export CLANG_TRIPLE=aarch64-linux-gnu-
           
-          # Safety link for scripts expecting 'python'
           sudo ln -sf /usr/bin/python3 /usr/bin/python
 
-          # 1. Initialize config
+          # 1. Start with your base config
           make raphael_defconfig
           
-          # 2. Apply Hack-Specific Configs
+          # 2. FIX FOR THE 'embedded-dtb.o' ERROR
+          # We must disable the embedded DTB feature because it breaks on modern build environments
+          ./scripts/config --disable CONFIG_BUILD_ARM64_EMBEDDED_DTB
+          ./scripts/config --disable CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE
+          ./scripts/config --disable CONFIG_BUILD_ARM64_DT_OVERLAY
+          
+          # 3. APPLY HACK SETTINGS (Matches 4.14.180.sh)
           ./scripts/config --set-str CONFIG_LOCALVERSION "-IMMENSITY-X"
           ./scripts/config --enable CONFIG_KALLSYMS
           ./scripts/config --enable CONFIG_KALLSYMS_ALL
@@ -43,11 +48,10 @@ jobs:
           ./scripts/config --disable CONFIG_SECURITY_SELINUX
           ./scripts/config --disable CONFIG_SECURITY_NETWORK
           
-          # 3. Finalize config
+          # 4. Finalize and Build
           make olddefconfig
-          
-          # 4. Build components
-          make -j$(nproc --all) Image.gz dtbs modules
+          # Building 'Image' specifically to avoid DTB append errors
+          make -j$(nproc --all) Image dtbs modules
 
       - name: Organize Artifacts
         if: always() 
@@ -55,20 +59,18 @@ jobs:
           mkdir -p out/dtb
           mkdir -p out/modules
           
-          # Copy Kernel Image
-          if [ -f arch/arm64/boot/Image.gz ]; then
-            cp arch/arm64/boot/Image.gz out/
-          elif [ -f arch/arm64/boot/Image ]; then
+          # Copy raw Image (since Image.gz sometimes fails if DTB is broken)
+          if [ -f arch/arm64/boot/Image ]; then
             cp arch/arm64/boot/Image out/
           fi
           
           # Find and copy all DTB files
           find arch/arm64/boot/dts/ -name "*.dtb" -exec cp {} out/dtb/ \;
           
-          # Find all compiled modules
+          # Find all compiled modules for the RT-hook script
           find . -name "*.ko" -exec cp {} out/modules/ \;
 
-      - name: Upload Raphael Package
+      - name: Upload Raphael Hack Package
         if: always()
         uses: actions/upload-artifact@v4
         with:
