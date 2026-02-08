@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Kernel Source
-        uses: uses: actions/checkout@v4
+        uses: actions/checkout@v4
         with:
           submodules: 'recursive'
           fetch-depth: 1
@@ -16,7 +16,6 @@ jobs:
       - name: Install Toolchain and Dependencies
         run: |
           sudo apt-get update
-          # Changed 'dtc' to 'device-tree-compiler' and removed 'python2' which caused the crash
           sudo apt-get install -y bc build-essential bison flex libssl-dev libelf-dev clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python3 device-tree-compiler
 
       - name: Configure and Compile
@@ -27,13 +26,13 @@ jobs:
           export CC=clang
           export CLANG_TRIPLE=aarch64-linux-gnu-
           
-          # Essential for scripts that still look for 'python'
+          # Safety link for scripts expecting 'python'
           sudo ln -sf /usr/bin/python3 /usr/bin/python
 
-          # 1. Start with your raphael_defconfig
+          # 1. Initialize config
           make raphael_defconfig
           
-          # 2. Inject Hack Requirements into the config
+          # 2. Apply Hack-Specific Configs
           ./scripts/config --set-str CONFIG_LOCALVERSION "-IMMENSITY-X"
           ./scripts/config --enable CONFIG_KALLSYMS
           ./scripts/config --enable CONFIG_KALLSYMS_ALL
@@ -44,11 +43,10 @@ jobs:
           ./scripts/config --disable CONFIG_SECURITY_SELINUX
           ./scripts/config --disable CONFIG_SECURITY_NETWORK
           
-          # 3. Apply changes
+          # 3. Finalize config
           make olddefconfig
           
-          # 4. Build Kernel + DTB (Raphael needs both for a proper boot)
-          # Building Image.gz specifically for Raphael
+          # 4. Build components
           make -j$(nproc --all) Image.gz dtbs modules
 
       - name: Organize Artifacts
@@ -57,22 +55,22 @@ jobs:
           mkdir -p out/dtb
           mkdir -p out/modules
           
-          # Copy the compressed kernel image (Expected by most Raphael installers)
+          # Copy Kernel Image
           if [ -f arch/arm64/boot/Image.gz ]; then
             cp arch/arm64/boot/Image.gz out/
-          else
+          elif [ -f arch/arm64/boot/Image ]; then
             cp arch/arm64/boot/Image out/
           fi
           
-          # Collect DTBs (Essential for hardware compatibility like Touch/Camera)
+          # Find and copy all DTB files
           find arch/arm64/boot/dts/ -name "*.dtb" -exec cp {} out/dtb/ \;
           
-          # Collect modules for your RT-hook script
+          # Find all compiled modules
           find . -name "*.ko" -exec cp {} out/modules/ \;
 
-      - name: Upload Raphael Hack Package
+      - name: Upload Raphael Package
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Raphael-Hack-Kernel-Output
+          name: Raphael-Hack-Kernel
           path: out/
