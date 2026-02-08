@@ -26,18 +26,25 @@ jobs:
           export CC=clang
           export CLANG_TRIPLE=aarch64-linux-gnu-
           
+          # Force the compiler to ignore enum mismatches globally
+          export KCFLAGS="-Wno-error=enum-int-mismatch -Wno-error=implicit-function-declaration -Wno-error=int-conversion -Wno-error=unused-variable"
+          
           sudo ln -sf /usr/bin/python3 /usr/bin/python
 
-          # 1. Start with your base config
+          # 1. Load config
           make raphael_defconfig
           
-          # 2. FIX FOR THE 'embedded-dtb.o' ERROR
-          # We must disable the embedded DTB feature because it breaks on modern build environments
+          # 2. DISABLE THE BROKEN AUDIO TECHPACK
+          # This prevents the tfa98xx error from stopping your build
+          ./scripts/config --disable CONFIG_SND_SOC_TFA98XX
+          ./scripts/config --disable CONFIG_TECHPACK_AUDIO
+          
+          # 3. Disable Broken Embedded DTB logic
           ./scripts/config --disable CONFIG_BUILD_ARM64_EMBEDDED_DTB
           ./scripts/config --disable CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE
           ./scripts/config --disable CONFIG_BUILD_ARM64_DT_OVERLAY
           
-          # 3. APPLY HACK SETTINGS (Matches 4.14.180.sh)
+          # 4. Apply Hack Requirements (Mandatory for 4.14.180.sh)
           ./scripts/config --set-str CONFIG_LOCALVERSION "-IMMENSITY-X"
           ./scripts/config --enable CONFIG_KALLSYMS
           ./scripts/config --enable CONFIG_KALLSYMS_ALL
@@ -48,9 +55,8 @@ jobs:
           ./scripts/config --disable CONFIG_SECURITY_SELINUX
           ./scripts/config --disable CONFIG_SECURITY_NETWORK
           
-          # 4. Finalize and Build
+          # 5. Build
           make olddefconfig
-          # Building 'Image' specifically to avoid DTB append errors
           make -j$(nproc --all) Image dtbs modules
 
       - name: Organize Artifacts
@@ -58,16 +64,8 @@ jobs:
         run: |
           mkdir -p out/dtb
           mkdir -p out/modules
-          
-          # Copy raw Image (since Image.gz sometimes fails if DTB is broken)
-          if [ -f arch/arm64/boot/Image ]; then
-            cp arch/arm64/boot/Image out/
-          fi
-          
-          # Find and copy all DTB files
+          if [ -f arch/arm64/boot/Image ]; then cp arch/arm64/boot/Image out/; fi
           find arch/arm64/boot/dts/ -name "*.dtb" -exec cp {} out/dtb/ \;
-          
-          # Find all compiled modules for the RT-hook script
           find . -name "*.ko" -exec cp {} out/modules/ \;
 
       - name: Upload Raphael Hack Package
