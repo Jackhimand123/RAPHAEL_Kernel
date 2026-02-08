@@ -26,51 +26,55 @@ jobs:
           export CC=clang
           export CLANG_TRIPLE=aarch64-linux-gnu-
           
-          # Force the compiler to ignore enum mismatches globally
+          # Fix for Audio/WLAN type mismatches
           export KCFLAGS="-Wno-error=enum-int-mismatch -Wno-error=implicit-function-declaration -Wno-error=int-conversion -Wno-error=unused-variable"
           
           sudo ln -sf /usr/bin/python3 /usr/bin/python
 
-          # 1. Load config
           make raphael_defconfig
           
-          # 2. DISABLE THE BROKEN AUDIO TECHPACK
-          # This prevents the tfa98xx error from stopping your build
+          # --- THE FIXES ---
+          # 1. Merge DTB into Kernel (Fixes 'Image only' issue)
+          ./scripts/config --enable CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE
+          
+          # 2. Bypass broken modules
           ./scripts/config --disable CONFIG_SND_SOC_TFA98XX
           ./scripts/config --disable CONFIG_TECHPACK_AUDIO
-          
-          # 3. Disable Broken Embedded DTB logic
           ./scripts/config --disable CONFIG_BUILD_ARM64_EMBEDDED_DTB
-          ./scripts/config --disable CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE
-          ./scripts/config --disable CONFIG_BUILD_ARM64_DT_OVERLAY
           
-          # 4. Apply Hack Requirements (Mandatory for 4.14.180.sh)
+          # 3. Hack Hooks (For your 4.14.180.sh script)
           ./scripts/config --set-str CONFIG_LOCALVERSION "-IMMENSITY-X"
           ./scripts/config --enable CONFIG_KALLSYMS
           ./scripts/config --enable CONFIG_KALLSYMS_ALL
           ./scripts/config --enable CONFIG_MODULES
-          ./scripts/config --enable CONFIG_MODULE_UNLOAD
-          ./scripts/config --enable CONFIG_MODULE_FORCE_LOAD
           ./scripts/config --enable CONFIG_MODVERSIONS
           ./scripts/config --disable CONFIG_SECURITY_SELINUX
           ./scripts/config --disable CONFIG_SECURITY_NETWORK
           
-          # 5. Build
           make olddefconfig
-          make -j$(nproc --all) Image dtbs modules
+          # Build the merged image and modules
+          make -j$(nproc --all) Image.gz-dtb modules
 
       - name: Organize Artifacts
         if: always() 
         run: |
-          mkdir -p out/dtb
           mkdir -p out/modules
-          if [ -f arch/arm64/boot/Image ]; then cp arch/arm64/boot/Image out/; fi
-          find arch/arm64/boot/dts/ -name "*.dtb" -exec cp {} out/dtb/ \;
-          find . -name "*.ko" -exec cp {} out/modules/ \;
+          
+          # Identify the merged kernel file
+          if [ -f arch/arm64/boot/Image.gz-dtb ]; then
+            cp arch/arm64/boot/Image.gz-dtb out/Image.gz-dtb
+          elif [ -f arch/arm64/boot/Image.gz ]; then
+            cp arch/arm64/boot/Image.gz out/Image.gz
+          else
+            cp arch/arm64/boot/Image out/Image
+          fi
+          
+          # Copy modules but skip the output folder to avoid 'same file' error
+          find . -name "*.ko" -not -path "./out/*" -exec cp {} out/modules/ \;
 
-      - name: Upload Raphael Hack Package
+      - name: Upload Flashable Kernel
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Raphael-Hack-Kernel
+          name: Raphael-Hack-Kernel-Final
           path: out/
