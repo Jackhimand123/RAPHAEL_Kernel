@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Kernel Source
-        uses: actions/checkout@v4
+        uses: uses: actions/checkout@v4
         with:
           submodules: 'recursive'
           fetch-depth: 1
@@ -16,7 +16,8 @@ jobs:
       - name: Install Toolchain and Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc build-essential bison flex libssl-dev libelf-dev clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python3 python2 dtc
+          # Changed 'dtc' to 'device-tree-compiler' and removed 'python2' which caused the crash
+          sudo apt-get install -y bc build-essential bison flex libssl-dev libelf-dev clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python3 device-tree-compiler
 
       - name: Configure and Compile
         run: |
@@ -26,13 +27,13 @@ jobs:
           export CC=clang
           export CLANG_TRIPLE=aarch64-linux-gnu-
           
-          # Fix for older scripts expecting 'python'
+          # Essential for scripts that still look for 'python'
           sudo ln -sf /usr/bin/python3 /usr/bin/python
 
-          # 1. Load the base config
+          # 1. Start with your raphael_defconfig
           make raphael_defconfig
           
-          # 2. Apply Hack-Specific Configs via scripts/config
+          # 2. Inject Hack Requirements into the config
           ./scripts/config --set-str CONFIG_LOCALVERSION "-IMMENSITY-X"
           ./scripts/config --enable CONFIG_KALLSYMS
           ./scripts/config --enable CONFIG_KALLSYMS_ALL
@@ -40,16 +41,14 @@ jobs:
           ./scripts/config --enable CONFIG_MODULE_UNLOAD
           ./scripts/config --enable CONFIG_MODULE_FORCE_LOAD
           ./scripts/config --enable CONFIG_MODVERSIONS
-          
-          # 3. Disable Security that blocks ioctl hooks
           ./scripts/config --disable CONFIG_SECURITY_SELINUX
           ./scripts/config --disable CONFIG_SECURITY_NETWORK
-
-          # 4. Sync config
+          
+          # 3. Apply changes
           make olddefconfig
           
-          # 5. Build Image.gz and DTBs (Raphael needs both)
-          # We don't use '|| true' here so we catch real errors
+          # 4. Build Kernel + DTB (Raphael needs both for a proper boot)
+          # Building Image.gz specifically for Raphael
           make -j$(nproc --all) Image.gz dtbs modules
 
       - name: Organize Artifacts
@@ -58,18 +57,22 @@ jobs:
           mkdir -p out/dtb
           mkdir -p out/modules
           
-          # Copy Kernel Image
-          [ -f arch/arm64/boot/Image.gz ] && cp arch/arm64/boot/Image.gz out/ || echo "Image.gz not found"
+          # Copy the compressed kernel image (Expected by most Raphael installers)
+          if [ -f arch/arm64/boot/Image.gz ]; then
+            cp arch/arm64/boot/Image.gz out/
+          else
+            cp arch/arm64/boot/Image out/
+          fi
           
-          # Find and copy all DTB files (Device Tree Blobs)
+          # Collect DTBs (Essential for hardware compatibility like Touch/Camera)
           find arch/arm64/boot/dts/ -name "*.dtb" -exec cp {} out/dtb/ \;
           
-          # Find all compiled modules (.ko files)
+          # Collect modules for your RT-hook script
           find . -name "*.ko" -exec cp {} out/modules/ \;
 
-      - name: Upload Kernel Package
+      - name: Upload Raphael Hack Package
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Raphael-Hack-Package
+          name: Raphael-Hack-Kernel-Output
           path: out/
