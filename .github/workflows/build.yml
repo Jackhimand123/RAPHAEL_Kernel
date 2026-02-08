@@ -16,7 +16,7 @@ jobs:
       - name: Install Toolchain and Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc build-essential bison flex libssl-dev libelf-dev clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python3
+          sudo apt-get install -y bc build-essential bison flex libssl-dev libelf-dev clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python3 python2 dtc
 
       - name: Configure and Compile
         run: |
@@ -26,41 +26,50 @@ jobs:
           export CC=clang
           export CLANG_TRIPLE=aarch64-linux-gnu-
           
-          # Safety for older Python scripts
+          # Fix for older scripts expecting 'python'
           sudo ln -sf /usr/bin/python3 /usr/bin/python
-          sudo ln -sf /usr/bin/true /usr/bin/python2
 
-          # FLAGS FOR GAME HACKS: Ensure symbols and modules are visible
-          export KCFLAGS="-Wno-error=enum-int-mismatch -Wno-error=address -Wno-error=int-conversion -Wno-error=implicit-function-declaration"
-
+          # 1. Load the base config
           make raphael_defconfig
           
-          # Enable Hack-Specific Support
-          scripts/config --enable CONFIG_KALLSYMS
-          scripts/config --enable CONFIG_KALLSYMS_ALL
-          scripts/config --enable CONFIG_MODULES
+          # 2. Apply Hack-Specific Configs via scripts/config
+          ./scripts/config --set-str CONFIG_LOCALVERSION "-IMMENSITY-X"
+          ./scripts/config --enable CONFIG_KALLSYMS
+          ./scripts/config --enable CONFIG_KALLSYMS_ALL
+          ./scripts/config --enable CONFIG_MODULES
+          ./scripts/config --enable CONFIG_MODULE_UNLOAD
+          ./scripts/config --enable CONFIG_MODULE_FORCE_LOAD
+          ./scripts/config --enable CONFIG_MODVERSIONS
           
-          # Disable the features that trigger the broken Makefile blocks
-          scripts/config --disable CONFIG_BUILD_ARM64_EMBEDDED_DTB
-          scripts/config --disable CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE
-          scripts/config --disable CONFIG_BUILD_ARM64_DT_OVERLAY
-          
+          # 3. Disable Security that blocks ioctl hooks
+          ./scripts/config --disable CONFIG_SECURITY_SELINUX
+          ./scripts/config --disable CONFIG_SECURITY_NETWORK
+
+          # 4. Sync config
           make olddefconfig
           
-          # Build the raw Image. The '|| true' ensures we proceed to upload even if a script fails at 99%
-          make -j$(nproc --all) Image modules || true
+          # 5. Build Image.gz and DTBs (Raphael needs both)
+          # We don't use '|| true' here so we catch real errors
+          make -j$(nproc --all) Image.gz dtbs modules
 
       - name: Organize Artifacts
         if: always() 
         run: |
+          mkdir -p out/dtb
           mkdir -p out/modules
-          # Hunt for the kernel binary (Image is the goal, vmlinux is the backup)
-          [ -f arch/arm64/boot/Image ] && cp arch/arm64/boot/Image out/ || cp vmlinux out/ || echo "Kernel not found"
+          
+          # Copy Kernel Image
+          [ -f arch/arm64/boot/Image.gz ] && cp arch/arm64/boot/Image.gz out/ || echo "Image.gz not found"
+          
+          # Find and copy all DTB files (Device Tree Blobs)
+          find arch/arm64/boot/dts/ -name "*.dtb" -exec cp {} out/dtb/ \;
+          
+          # Find all compiled modules (.ko files)
           find . -name "*.ko" -exec cp {} out/modules/ \;
 
-      - name: Upload Hack Kernel Package
+      - name: Upload Kernel Package
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Raphael-Hack-Kernel
+          name: Raphael-Hack-Package
           path: out/
