@@ -1,8 +1,6 @@
 name: Build Gravity-perf Kernel (A15)
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
 
 jobs:
   build:
@@ -10,8 +8,6 @@ jobs:
     steps:
       - name: Checkout Kernel Source
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
       - name: Install Build Dependencies
         run: |
@@ -22,19 +18,23 @@ jobs:
       - name: Setup Proton Clang
         run: |
           git clone https://github.com/kdrag0n/proton-clang.git --depth=1 clang
-          echo "$(pwd)/clang/bin" >> $GITHUB_PATH
 
       - name: Build Kernel
         run: |
-          # Define Variables
+          # Absolute path to Clang
+          CLANG_DIR=$(pwd)/clang/bin
+          export PATH="$CLANG_DIR:$PATH"
+          
+          # ARCH and User info
           export ARCH=arm64
-          export SUBARCH=arm64
           export KBUILD_BUILD_USER="Gravity"
           export KBUILD_BUILD_HOST="Perf-Lab"
-          export PATH="$(pwd)/clang/bin:$PATH"
           
-          # Use Clang & LLVM Tools
+          # Correcting the Arguments to fix the Linker Error
+          # We use system 'gcc' for HOSTCC to avoid the libc incompatibility
           MAKE_ARGS="CC=clang \
+                     HOSTCC=gcc \
+                     HOSTCXX=g++ \
                      LD=ld.lld \
                      AR=llvm-ar \
                      NM=llvm-nm \
@@ -45,21 +45,28 @@ jobs:
                      CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
                      LLVM=1"
 
-          # 1. Regenerate Config
+          # Create output directory
+          mkdir -out
+
+          # 1. Configuration
           make O=out $MAKE_ARGS raphael_defconfig
 
-          # 2. Compile (uses all available CPU cores)
-          make -j$(nproc --all) O=out $MAKE_ARGS
-        
+          # 2. Build Image.gz-dtb
+          make -j$(nproc --all) O=out $MAKE_ARGS Image.gz-dtb
+
       - name: Package with AnyKernel3
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
-          cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+          # Raphael usually uses Image.gz-dtb
+          if [ -f out/arch/arm64/boot/Image.gz-dtb ]; then
+            cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+          else
+            cp out/arch/arm64/boot/Image.gz AnyKernel3/
+          fi
           cd AnyKernel3
-          # Simple zip packaging
           zip -r9 ../Gravity-perf-Raphael.zip * -x .git README.md
 
-      - name: Upload Kernel Artifact
+      - name: Upload Kernel
         uses: actions/upload-artifact@v4
         with:
           name: Gravity-perf-Kernel
